@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 const UNKNOWN: i32 = -1;
 const MINE: i32 = -2;
@@ -128,7 +128,7 @@ impl Matrix {
         )
     }
 
-    fn calculate_mines_from_row(&self, row: usize, unknown_tiles: &Vec<(usize, usize)>, mines: &mut HashSet<(usize, usize)>, safe: &mut HashSet<(usize, usize)>) {
+    fn calculate_mines_from_row(&self, row: usize, unknown_tiles: &Vec<(usize, usize)>, resolved: &mut HashMap<(usize, usize), i32>) {
         let (coeffs, rhs) = self.get_row_coeffs_and_rhs(row);
         let (min_bound, max_bound) = self.calculate_rhs_bounds_from_coeffs(coeffs);
         
@@ -143,16 +143,16 @@ impl Matrix {
         for (&tile, &coeff) in unknown_tiles.iter().zip(coeffs) {
             if coeff == 0 { continue; }
             if coeff.signum() == mine_sign {
-                mines.insert(tile);
+                resolved.insert(tile, 1);
             } else {
-                safe.insert(tile);
+                resolved.insert(tile, 0);
             }
         }
     }
 
-    fn convert_to_rref_and_calculate_mines(&mut self, unknown_tiles: &Vec<(usize, usize)>, mines: &mut HashSet<(usize, usize)>, safe: &mut HashSet<(usize, usize)>) {
+    fn convert_to_rref_and_calculate_mines(&mut self, unknown_tiles: &Vec<(usize, usize)>, resolved: &mut HashMap<(usize, usize), i32>) {
         for row in 0..self.rows {
-            self.calculate_mines_from_row(row, unknown_tiles, mines, safe);
+            self.calculate_mines_from_row(row, unknown_tiles, resolved);
         }
 
         let mut lead = 0;
@@ -190,7 +190,7 @@ impl Matrix {
                         self.set(i, j, v);
                     }
                     self.normalize_row(i);
-                    self.calculate_mines_from_row(i, unknown_tiles, mines, safe);
+                    self.calculate_mines_from_row(i, unknown_tiles, resolved);
                 }
             }
             lead += 1;
@@ -244,8 +244,8 @@ fn main() {
         [-1,  2, -1, -1, -1,  4, -1],
         [ 2, -1, -1,  2, -1, -1,  2],
         [-1,  2, -1, -1, -1, -1, -1],
-        [-1,  2,  3, -1,  3, -2,  3],
-        [-1, -1, -1,  2, -1, -2, -2],
+        [-1,  2,  3, -1,  3, -1,  3],
+        [-1, -1, -1,  2, -1, -1, -1],
     ]);
 
     let mut unknown_tiles: Vec<(usize, usize)> = Vec::new();
@@ -296,30 +296,19 @@ fn main() {
     }
     matrix.print_augmented_matrix();
 
-    let mut mines: HashSet<(usize, usize)> = HashSet::new();
-    let mut safe: HashSet<(usize, usize)> = HashSet::new();
+    let mut resolved: HashMap<(usize, usize), i32> = HashMap::new();
     while unknown_tiles.len() > 0 {
-        let old_mines_len = mines.len();
-        let old_safe_len = safe.len();
+        let old_resolved_len = resolved.len();
         while unknown_tiles.len() > 0 {
-            let old_mines_len = mines.len();
-            let old_safe_len = safe.len();
+            let old_resolved_len = resolved.len();
 
-            matrix.convert_to_rref_and_calculate_mines(&unknown_tiles, &mut mines, &mut safe);
+            matrix.convert_to_rref_and_calculate_mines(&unknown_tiles, &mut resolved);
             println!();
             matrix.print_augmented_matrix();
 
             for i in (0..unknown_tiles.len()).rev() {
                 let tile = unknown_tiles.get(i).unwrap();
-                let is_mine = mines.contains(tile);
-                let is_safe = safe.contains(tile);
-                if is_mine || is_safe {
-                    if is_mine && is_safe { println!("{:?} is somehow both a mine and safe", tile); continue; }
-                    let tile_value = if is_mine {
-                        1
-                    } else {
-                        0
-                    };
+                if let Some(&tile_value) = resolved.get(tile) {
                     matrix.move_column_to_rhs(i, tile_value);
                     unknown_tiles.remove(i);
                     println!("reduced col");
@@ -332,24 +321,98 @@ fn main() {
                 }
             }
 
-            if mines.len() == old_mines_len && safe.len() == old_safe_len {
+            if resolved.len() == old_resolved_len {
                 break;
             }
         }
 
-        // substitution here
+        let mut assumed: HashMap<(usize, usize), i32> = HashMap::new();
+        for check_index in (0..unknown_tiles.len()).rev() {
+            let check_tile = unknown_tiles[check_index];
+            let mut contradicted = [false, false];
+            for check_tile_value in 0..=1 {
+                assumed.insert(check_tile, check_tile_value as i32);
+                let mut should_continue = true;
+                'check: while should_continue {
+                    should_continue = false;
+                    for row in 0..matrix.rows {
+                        let row_slice = matrix.get_row(row);
+                        let rhs = row_slice[matrix.cols - 1];
+                        let (min_bound, max_bound, rhs): (i32, i32, i32) = row_slice.iter().enumerate().rev().skip(1).fold((0, 0, rhs), |mut acc, (i, &coeff)| {
+                            if let Some(&tile_value) = resolved.get(unknown_tiles.get(i).unwrap()) {
+                                acc.2 -= coeff * tile_value;
+                            } else if let Some(&tile_value) = assumed.get(unknown_tiles.get(i).unwrap()) {
+                                acc.2 -= coeff * tile_value;
+                            } else {
+                                if coeff < 0 {
+                                    acc.0 += coeff;
+                                } else if coeff > 0 {
+                                    acc.1 += coeff;
+                                }
+                            }
+                            acc
+                        });
 
-        if mines.len() == old_mines_len && safe.len() == old_safe_len {
+                        if rhs < min_bound || max_bound < rhs {
+                            println!("{:?} cannot hold value {}", check_tile, check_tile_value);
+                            contradicted[check_tile_value] = true;
+                            break 'check;
+                        }
+
+                        let mine_sign = if rhs == min_bound {
+                            -1
+                        } else if rhs == max_bound {
+                            1
+                        } else {
+                            continue;
+                        };
+
+                        for (tile, &coeff) in unknown_tiles.iter().zip(row_slice) {
+                            if coeff == 0 { continue; }
+                            let new_value = if coeff.signum() == mine_sign { 1 } else { 0 };
+                            if let Some(&old_value) = assumed.get(tile) {
+                                if old_value != new_value {
+                                    println!("{:?} cannot hold value {}", check_tile, check_tile_value);
+                                    contradicted[check_tile_value] = true;
+                                    break 'check;
+                                }
+                            }
+                            assumed.insert(*tile, new_value);
+                            should_continue = true;
+                        }
+                    }
+                }
+                assumed.clear();
+            }
+            println!("{:?}", contradicted);
+            match contradicted {
+                [true, false] => {
+                    resolved.insert(check_tile, 1);
+                    matrix.move_column_to_rhs(check_index, 1);
+                    unknown_tiles.remove(check_index);
+                },
+                [false, true] => {
+                    resolved.insert(check_tile, 0);
+                    matrix.move_column_to_rhs(check_index, 0);
+                    unknown_tiles.remove(check_index);
+                },
+                [true, true] => { println!("invalid board"); },
+                [false, false] => (),
+            }
+        }
+
+        if resolved.len() == old_resolved_len {
             break;
         }
     }
 
     // debug
-    for &tile in mines.iter() {
-        field.set(tile.0, tile.1, MINE);
-    }
-    for &tile in safe.iter() {
-        field.set(tile.0, tile.1, SAFE);
+    for (tile, value) in resolved.iter() {
+        field.set(tile.0, tile.1, match value {
+            1 => MINE,
+            0 => SAFE,
+            _ => UNKNOWN,
+        });
     }
     field.print_field();
 }
