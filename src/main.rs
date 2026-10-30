@@ -238,15 +238,27 @@ impl Matrix {
 }
 
 fn main() {
+    // let mut field = Matrix::from_array([
+    //     [-4, -1,  2,  2, -1, -1, -1],
+    //     [-1, -1, -1, -1,  2,  3, -1],
+    //     [-1,  2, -1, -1, -1,  4, -1],
+    //     [ 2, -1, -1,  2, -1, -1,  2],
+    //     [-1,  2, -1, -1, -1, -1, -1],
+    //     [-1,  2,  3, -1,  3, -1,  3],
+    //     [-1, -1, -1,  2, -1, -1, -1],
+    // ]);
     let mut field = Matrix::from_array([
-        [-4, -1,  2,  2, -1, -1, -1],
-        [-1, -1, -1, -1,  2,  3, -1],
-        [-1,  2, -1, -1, -1,  4, -1],
-        [ 2, -1, -1,  2, -1, -1,  2],
-        [-1,  2, -1, -1, -1, -1, -1],
-        [-1,  2,  3, -1,  3, -1,  3],
-        [-1, -1, -1,  2, -1, -1, -1],
+        [-1,  1, -1, -1,  1, -1,  2, -1, -1],
+        [-1,  2, -1, -1, -1, -1, -1,  3,  2],
+        [ 2,  3, -1, -1,  2, -1, -1, -1, -1],
+        [-1, -1,  2, -1,  1,  3,  4, -1,  2],
+        [ 1, -1, -1,  1, -1,  1, -1, -1,  2],
+        [-1,  2,  1, -1, -1, -1,  1, -1, -1],
+        [-1, -1,  2, -1, -1, -1,  2, -1,  3],
+        [ 3, -1,  2, -1,  1, -1, -1, -1, -1],
+        [-1, -1, -1, -1, -1,  1, -1, -1,  2],
     ]);
+    field.print_field();
 
     let mut unknown_tiles: Vec<(usize, usize)> = Vec::new();
     let mut numbered_tiles: Vec<(usize, usize)> = Vec::new();
@@ -368,15 +380,8 @@ fn main() {
                         };
 
                         for (tile, &coeff) in unknown_tiles.iter().zip(row_slice) {
-                            if coeff == 0 { continue; }
+                            if coeff == 0 || resolved.contains_key(tile) || assumed.contains_key(tile) { continue; }
                             let new_value = if coeff.signum() == mine_sign { 1 } else { 0 };
-                            if let Some(&old_value) = assumed.get(tile) {
-                                if old_value != new_value {
-                                    println!("{:?} cannot hold value {}", check_tile, check_tile_value);
-                                    contradicted[check_tile_value] = true;
-                                    break 'check;
-                                }
-                            }
                             assumed.insert(*tile, new_value);
                             should_continue = true;
                         }
