@@ -1,9 +1,12 @@
+use std::time::Instant;
 use std::collections::HashMap;
 
 use crate::matrix::Matrix;
 use crate::{UNKNOWN, MINE};
 
-pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {let mut unknown_tiles: Vec<(usize, usize)> = Vec::new();
+pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {
+    let start = Instant::now();
+    let mut unknown_tiles: Vec<(usize, usize)> = Vec::new();
     let mut numbered_tiles: Vec<(usize, usize)> = Vec::new();
     for y in 0..field.rows {
         for x in 0..field.cols {
@@ -24,9 +27,12 @@ pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {let mut unknown_ti
             }
         }
     }
+    println!("getting unknown tiles and numbered tiles took {:?} | unknowns: {}", start.elapsed(), unknown_tiles.len());
+
     // println!("({}) {:?}", unknown_tiles.len(), unknown_tiles);
     // println!("({}) {:?}", numbered_tiles.len(), numbered_tiles);
 
+    let start = Instant::now();
     let mut matrix = Matrix::new(numbered_tiles.len(), unknown_tiles.len() + 1);
     for (numbered_index, &(y, x)) in numbered_tiles.iter().enumerate() {
         let mut tile_value = field.get(y, x);
@@ -49,12 +55,15 @@ pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {let mut unknown_ti
 
         matrix.set(numbered_index, matrix.cols - 1, tile_value);
     }
+    println!("building matrix took {:?}", start.elapsed());
     // matrix.print_augmented_matrix();
 
     let mut resolved: HashMap<(usize, usize), i32> = HashMap::new();
     while unknown_tiles.len() > 0 {
+        println!("\n--- iter start");
         let old_resolved_len = resolved.len();
         while unknown_tiles.len() > 0 {
+            let start = Instant::now();
             let old_resolved_len = resolved.len();
 
             matrix.convert_to_rref_and_calculate_mines(&unknown_tiles, &mut resolved);
@@ -76,17 +85,26 @@ pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {let mut unknown_ti
                 }
             }
 
+            println!("rref took {:?} | left unknown: {}", start.elapsed(), unknown_tiles.len());
             if resolved.len() == old_resolved_len {
                 break;
             }
         }
 
+        if unknown_tiles.len() == 0 {
+            println!("--- iter end");
+            break;
+        }
+
+        let start = Instant::now();
         let mut assumed: HashMap<(usize, usize), i32> = HashMap::new();
+        println!("\nsubstitution started | resolved: {}", resolved.len());
         for check_index in (0..unknown_tiles.len()).rev() {
             let check_tile = unknown_tiles[check_index];
-            let mut contradicted = [false, false];
+            let mut already_contradicted = false;
             for check_tile_value in 0..=1 {
                 assumed.insert(check_tile, check_tile_value as i32);
+                // let start = Instant::now();
                 let mut should_continue = true;
                 'check: while should_continue {
                     should_continue = false;
@@ -109,8 +127,10 @@ pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {let mut unknown_ti
                         });
 
                         if rhs < min_bound || max_bound < rhs {
-                            // println!("{:?} cannot hold value {}", check_tile, check_tile_value);
-                            contradicted[check_tile_value] = true;
+                            already_contradicted = true;
+                            resolved.insert(check_tile, 1 - check_tile_value);
+                            matrix.move_column_to_rhs(check_index, 1 - check_tile_value);
+                            unknown_tiles.remove(check_index);
                             break 'check;
                         }
 
@@ -130,24 +150,15 @@ pub fn solve(field: &Matrix) -> HashMap<(usize, usize), i32> {let mut unknown_ti
                         }
                     }
                 }
+                // println!("substitution iter for {:?} = {} took {:?} | resolved: {}", check_tile, check_tile_value, start.elapsed(), resolved.len());
                 assumed.clear();
-            }
-            // println!("{:?}", contradicted);
-            match contradicted {
-                [true, false] => {
-                    resolved.insert(check_tile, 1);
-                    matrix.move_column_to_rhs(check_index, 1);
-                    unknown_tiles.remove(check_index);
-                },
-                [false, true] => {
-                    resolved.insert(check_tile, 0);
-                    matrix.move_column_to_rhs(check_index, 0);
-                    unknown_tiles.remove(check_index);
-                },
-                [true, true] => { println!("invalid board"); },
-                [false, false] => (),
+                if already_contradicted {
+                    break;
+                }
             }
         }
+        println!("substitution took {:?} | left unknown: {}", start.elapsed(), unknown_tiles.len());
+        println!("--- iter end");
 
         if resolved.len() == old_resolved_len {
             break;

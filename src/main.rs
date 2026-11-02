@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use minesweeper_solver::matrix::Matrix;
 use minesweeper_solver::solver::solve;
 use minesweeper_solver::{UNKNOWN, MINE, SAFE};
@@ -24,8 +26,10 @@ fn main() {
         [-1, -1, -1, -1, -1,  1, -1, -1,  2],
     ]);
     field.print_field();
-
+    
+    let start = Instant::now();
     let resolved = solve(&field);
+    println!("solving took {:?}", start.elapsed());
     for (tile, value) in resolved.iter() {
         field.set(tile.0, tile.1, match value {
             1 => MINE,
