@@ -1,5 +1,5 @@
 pub mod matrix;
-pub mod solver;
+pub mod field;
 
 pub const UNKNOWN: i32 = -1;
 pub const MINE: i32 = -2;

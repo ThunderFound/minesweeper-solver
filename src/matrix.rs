@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use crate::{UNKNOWN, MINE, SAFE};
-
 fn gcd(mut a: i32, mut b: i32) -> i32 {
     while b != 0 {
         (a, b) = (b, a % b)
@@ -13,9 +11,9 @@ fn gcd_array(nums: &[i32]) -> i32 {
     nums.iter().skip(1).fold(nums[0], |acc, &x| gcd(acc, x))
 }
 
-fn lcm_array(nums: &[i32]) -> i32 {
-    nums.iter().product::<i32>() / gcd_array(nums)
-}
+// fn lcm_array(nums: &[i32]) -> i32 {
+//     nums.iter().product::<i32>() / gcd_array(nums)
+// }
 
 pub struct Matrix {
     pub data: Vec<i32>,
@@ -24,9 +22,9 @@ pub struct Matrix {
 }
 
 impl Matrix {
-    pub fn new(rows: usize, cols: usize) -> Self {
+    pub fn new(rows: usize, cols: usize, default: i32) -> Self {
         Self {
-            data: vec![0; rows * cols],
+            data: vec![default; rows * cols],
             rows: rows,
             cols: cols,
         }
@@ -204,32 +202,6 @@ impl Matrix {
                 } else {
                     print!(" {n} ");
                 }
-            }
-        }
-    }
-
-    pub fn print_field(&self) {
-        for i in 0..self.data.len() {
-            let tile_value = self.data[i];
-            let text = match tile_value {
-                MINE => "\x1b[48;2;255;0;0m  ",
-                SAFE => "\x1b[48;2;0;255;0m  ",
-                UNKNOWN => "\x1b[48;2;128;128;64m  ",
-                0 => "\x1b[48;2;192;192;128m  ",
-                1 => "\x1b[48;2;192;192;128m\x1b[38;2;0;0;255m1 ",
-                2 => "\x1b[48;2;192;192;128m\x1b[38;2;0;128;0m2 ",
-                3 => "\x1b[48;2;192;192;128m\x1b[38;2;255;0;0m3 ",
-                4 => "\x1b[48;2;192;192;128m\x1b[38;2;0;0;128m4 ",
-                5 => "\x1b[48;2;192;192;128m\x1b[38;2;128;0;0m5 ",
-                6 => "\x1b[48;2;192;192;128m\x1b[38;2;0;128;128m6 ",
-                7 => "\x1b[48;2;192;192;128m\x1b[38;2;0;0;0m7 ",
-                8 => "\x1b[48;2;192;192;128m\x1b[38;2;128;128;128m8 ",
-                _ => "  ",
-            };
-            if i % self.cols == self.cols - 1 {
-                print!("{}\x1b[0m\n", text);
-            } else {
-                print!("{}\x1b[0m", text);
             }
         }
     }
