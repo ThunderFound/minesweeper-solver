@@ -14,3 +14,5 @@ Next, the solved does back-substitution/backtracking on the matrix. For each unr
 It tries substituting this value into each row, while finding values of other tiles. If it finds a contradiction while substituting, then the tile cannot have this value. Otherwise, try substituting the other value.
 
 These 2 steps are repeated until there are no unknown tiles left or it couldn't find any more tiles.
+
+Solver doesn't check boards for validity yet
