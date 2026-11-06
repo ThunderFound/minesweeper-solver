@@ -82,49 +82,164 @@ impl Field {
 
     pub fn solve(&mut self) -> (bool, HashMap<(usize, usize), i32>) {
         let start = Instant::now();
-        let mut unknown_tiles: Vec<(usize, usize)> = Vec::new();
-        let mut numbered_tiles: Vec<(usize, usize)> = Vec::new();
+        let mut groups: usize = 0;
+        let mut unknown_groups: HashMap<usize, HashSet<(usize, usize)>> = HashMap::new(); // group, [tile]
+        let mut numbered_groups: HashMap<usize, HashSet<(usize, usize)>> = HashMap::new();
+        let mut unknown_tiles_map: HashMap<(usize, usize), usize> = HashMap::new(); // tile, group
+        let mut numbered_tiles_map: HashMap<(usize, usize), usize> = HashMap::new();
         for row in 0..self.field.rows {
             for col in 0..self.field.cols {
                 let tile_value = self.field.get(row, col);
-                'adj_check: for adj_row in row.saturating_sub(1)..=(row + 1).min(self.field.rows - 1) {
-                    for adj_col in col.saturating_sub(1)..=(col + 1).min(self.field.cols - 1) {
-                        if adj_row == row && adj_col == col { continue; }
-                        
-                        let adj_tile_value = self.field.get(adj_row, adj_col);
-                        if (0 <= tile_value && tile_value <= 8) && (adj_tile_value == UNKNOWN) {
-                            numbered_tiles.push((row, col));
-                            break 'adj_check;
-                        } else if (tile_value == UNKNOWN) && (0 <= adj_tile_value && adj_tile_value <= 8) {
-                            unknown_tiles.push((row, col));
-                            break 'adj_check;
-                        }
+                let mut should_continue = false;
+                let mut is_unknown = false;
+                for (adj_row, adj_col) in self.get_neighboring_tiles(row, col) {
+                    let adj_tile_value = self.field.get(adj_row, adj_col);
+                    if (0 <= tile_value && tile_value <= 8) && (adj_tile_value == UNKNOWN) {
+                        should_continue = true;
+                        is_unknown = false;
+                        break;
+                    } else if (tile_value == UNKNOWN) && (0 <= adj_tile_value && adj_tile_value <= 8) {
+                        should_continue = true;
+                        is_unknown = true;
+                        break;
                     }
+                }
+                if !should_continue { continue; }
+
+                let mut found_groups: HashSet<usize> = HashSet::new();
+                let mut found_tiles: HashSet<(usize, usize)> = HashSet::new();
+                found_tiles.insert((row, col));
+                self.get_neighboring_tiles(row, col)
+                    .filter(|&(adj_row, adj_col)| {
+                        let adj_tile_value = self.field.get(adj_row, adj_col);
+                        if is_unknown {
+                            0 <= adj_tile_value && adj_tile_value <= 8
+                        } else {
+                            adj_tile_value == -1
+                        }
+                    })
+                    .for_each(|(adj_row, adj_col)| {
+                        if let Some(&new_group) = match is_unknown {
+                            true => numbered_tiles_map.get(&(adj_row, adj_col)),
+                            false => unknown_tiles_map.get(&(adj_row, adj_col)),
+                        } {
+                            found_groups.insert(new_group);
+                        } else {
+                            found_tiles.insert((adj_row, adj_col));
+                        }
+
+                        self.get_neighboring_tiles(adj_row, adj_col)
+                            .filter(|&(adj_row, adj_col)| {
+                                let adj_tile_value = self.field.get(adj_row, adj_col);
+                                if is_unknown {
+                                    adj_tile_value == -1
+                                } else {
+                                    0 <= adj_tile_value && adj_tile_value <= 8
+                                }
+                            })
+                            .for_each(|(adj_adj_row, adj_adj_col)| { // this is abysmal
+                                if let Some(&new_group) = match is_unknown {
+                                    true => unknown_tiles_map.get(&(adj_adj_row, adj_adj_col)),
+                                    false => numbered_tiles_map.get(&(adj_adj_row, adj_adj_col)),
+                                } {
+                                    found_groups.insert(new_group);
+                                } else {
+                                    found_tiles.insert((adj_adj_row, adj_adj_col));
+                                }
+                            });
+                    });
+                
+                if found_groups.len() == 0 {
+                    let mut unknown_tiles: HashSet<(usize, usize)> = HashSet::new();
+                    let mut numbered_tiles: HashSet<(usize, usize)> = HashSet::new();
+                    found_tiles.into_iter().for_each(|(row, col)| {
+                        let tile_value = self.field.get(row, col);
+                        if 0 <= tile_value && tile_value <= 8 {
+                            numbered_tiles_map.insert((row, col), groups);
+                            numbered_tiles.insert((row, col));
+                        } else if tile_value == -1 {
+                            unknown_tiles_map.insert((row, col), groups);
+                            unknown_tiles.insert((row, col));
+                        }
+                    });
+                    unknown_groups.insert(groups, unknown_tiles);
+                    numbered_groups.insert(groups, numbered_tiles);
+                    groups += 1;
+                } else if found_groups.len() == 1 {
+                    let &new_group = found_groups.iter().nth(0).unwrap();
+                    found_tiles.into_iter().for_each(|(row, col)| {
+                        let tile_value = self.field.get(row, col);
+                        if 0 <= tile_value && tile_value <= 8 {
+                            numbered_tiles_map.insert((row, col), new_group);
+                            numbered_groups.get_mut(&new_group).unwrap().insert((row, col));
+                        } else if tile_value == -1 {
+                            unknown_tiles_map.insert((row, col), new_group);
+                            unknown_groups.get_mut(&new_group).unwrap().insert((row, col));
+                        }
+                    });
+                } else {
+                    let &new_group = found_groups.iter().min().unwrap();
+                    found_tiles.into_iter().for_each(|(row, col)| {
+                        let tile_value = self.field.get(row, col);
+                        if 0 <= tile_value && tile_value <= 8 {
+                            numbered_tiles_map.insert((row, col), new_group);
+                            numbered_groups.get_mut(&new_group).unwrap().insert((row, col));
+                        } else if tile_value == -1 {
+                            unknown_tiles_map.insert((row, col), new_group);
+                            unknown_groups.get_mut(&new_group).unwrap().insert((row, col));
+                        }
+                    });
+                    found_groups
+                        .into_iter()
+                        .filter(|&group| group != new_group)
+                        .for_each(|group| {
+                            unknown_groups
+                                .get(&group)
+                                .unwrap()
+                                .iter()
+                                .for_each(|tile| {
+                                    *unknown_tiles_map.get_mut(tile).unwrap() = new_group;
+                                });
+                            numbered_groups
+                                .get(&group)
+                                .unwrap()
+                                .iter()
+                                .for_each(|tile| {
+                                    *numbered_tiles_map.get_mut(tile).unwrap() = new_group;
+                                });
+                            
+                            let unknown_group = unknown_groups.remove(&group).unwrap().into_iter();
+                            unknown_groups
+                                .get_mut(&new_group)
+                                .unwrap()
+                                .extend(unknown_group);
+                            
+                            let numbered_group = numbered_groups.remove(&group).unwrap().into_iter();
+                            numbered_groups
+                                .get_mut(&new_group)
+                                .unwrap()
+                                .extend(numbered_group);
+                        });
                 }
             }
         }
-        let mut unknown_tiles_count = unknown_tiles.len();
-        println!("getting unknown tiles and numbered tiles took {:?} | unknowns: {}", start.elapsed(), unknown_tiles.len());
+        let mut unknown_groups: HashMap<usize, Vec<(usize, usize)>> = unknown_groups.into_iter().map(|(group, tiles)| {let mut tiles: Vec<(usize, usize)> = tiles.into_iter().collect(); tiles.sort_unstable(); (group, tiles)}).collect();
+        let mut numbered_groups: HashMap<usize, Vec<(usize, usize)>> = numbered_groups.into_iter().map(|(group, tiles)| {let mut tiles: Vec<(usize, usize)> = tiles.into_iter().collect(); tiles.sort_unstable(); (group, tiles)}).collect();
+        // unknown_groups.iter().for_each(|(group, tiles)| {
+        //     println!("{}: {:?}", group, tiles);
+        // });
+        let mut unknown_tiles_count: usize = unknown_groups.values().map(|unknown_tiles| unknown_tiles.len()).sum();
+        // println!("getting unknown tiles and numbered tiles took {:?} | unknowns: {}", start.elapsed(), unknown_tiles_count);
 
-        // let start = Instant::now();
-        let mut groups: usize = 0;
-        let mut unknown_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-        let mut numbered_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-
-        
-        unknown_groups.insert(0, unknown_tiles);
-
-        numbered_groups.insert(0, numbered_tiles);
-        groups += 1;
-        // println!("grouping unknown tiles and numbered tiles took {:?} | unknowns: {}", start.elapsed(), unknown_tiles.len());
 
         let mut resolved: HashMap<(usize, usize), i32> = HashMap::new();
 
-        for group in 0..groups {
+        let groups: HashSet<usize> = unknown_groups.keys().cloned().collect();
+        for group in groups {
             let unknown_tiles = unknown_groups.get_mut(&group).unwrap();
             let numbered_tiles = numbered_groups.get_mut(&group).unwrap();
 
-            let start = Instant::now();
+            // let start = Instant::now();
             let mut matrix = Matrix::new(numbered_tiles.len(), unknown_tiles.len() + 1, 0);
             for (numbered_index, &(row, col)) in numbered_tiles.iter().enumerate() {
                 let mut tile_value = self.field.get(row, col);
@@ -142,12 +257,12 @@ impl Field {
 
                 matrix.set(numbered_index, matrix.cols - 1, tile_value);
             }
-            println!("building matrix took {:?}", start.elapsed());
+            // println!("building matrix took {:?}", start.elapsed());
 
             while unknown_tiles.len() > 0 {
-                println!("\n--- iter start");
+                // println!("\n--- iter start");
                 while unknown_tiles.len() > 0 {
-                    let start = Instant::now();
+                    // let start = Instant::now();
                     let old_resolved_len = resolved.len();
 
                     matrix.convert_to_rref_and_calculate_mines(&unknown_tiles, &mut resolved);
@@ -167,28 +282,28 @@ impl Field {
                         }
                     }
 
-                    println!("rref took {:?} | left unknown: {}", start.elapsed(), unknown_tiles.len());
+                    // println!("rref took {:?} | left unknown: {}", start.elapsed(), unknown_tiles.len());
                     if resolved.len() == old_resolved_len {
                         break;
                     }
                 }
 
                 if unknown_tiles.len() == 0 {
-                    println!("--- iter end");
+                    // println!("--- iter end");
                     break;
                 }
 
                 let old_resolved_len = resolved.len();
-                println!("\nsubstitution started | resolved: {} | left unknown: {}", old_resolved_len, unknown_tiles.len());
+                // println!("\nsubstitution started | resolved: {} | left unknown: {}", old_resolved_len, unknown_tiles.len());
 
-                let start = Instant::now();
+                // let start = Instant::now();
                 let mut assumed: HashMap<(usize, usize), i32> = HashMap::new();
                 for check_index in (0..unknown_tiles.len()).rev() {
                     let check_tile = unknown_tiles[check_index];
                     let mut already_contradicted = false;
                     for check_tile_value in 0..=1 {
                         assumed.insert(check_tile, check_tile_value as i32);
-                        let start = Instant::now();
+                        // let start = Instant::now();
                         let mut should_continue = true;
                         'check: while should_continue {
                             should_continue = false;
@@ -235,15 +350,15 @@ impl Field {
                                 }
                             }
                         }
-                        println!("substitution iter for {:?} = {} took {:?} | resolved: {}", check_tile, check_tile_value, start.elapsed(), resolved.len());
+                        // println!("substitution iter for {:?} = {} took {:?} | resolved: {}", check_tile, check_tile_value, start.elapsed(), resolved.len());
                         assumed.clear();
                         if already_contradicted {
                             break;
                         }
                     }
                 }
-                println!("substitution took {:?} | left unknown: {}", start.elapsed(), unknown_tiles.len());
-                println!("--- iter end");
+                // println!("substitution took {:?} | left unknown: {}", start.elapsed(), unknown_tiles.len());
+                // println!("--- iter end");
 
                 if resolved.len() == old_resolved_len {
                     break;
@@ -256,7 +371,7 @@ impl Field {
             .for_each(|(tile, _)| {
                 self.all_unknown_tiles.remove(tile);
             });
-        println!("{} {}", unknown_tiles_count, unknown_groups.values().map(|unknown_tiles| unknown_tiles.len()).sum::<usize>());
+        // println!("{} {}", unknown_tiles_count, unknown_groups.values().map(|unknown_tiles| unknown_tiles.len()).sum::<usize>());
         (unknown_tiles_count == 0, resolved)
     }
 
